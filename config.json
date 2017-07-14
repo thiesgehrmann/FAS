@@ -1,0 +1,8 @@
+{
+  "outdir"     : "/home/thiesgehrmann/projects/FAS",
+  "prot_query" : "/home/thiesgehrmann/projects/FAS/fas_neo.fa",
+  "fas12"      : "/home/thiesgehrmann/projects/FAS/fas_yeast.fa",
+  "evalue_threshold": 1e-50,
+  "genomes" : "/home/thiesgehrmann/projects/pipeline_tests/pub_jgi/run//extract/config.json"
+}
+
