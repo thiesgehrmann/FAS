@@ -16,14 +16,22 @@ GENOMES = dconfig["data"].keys()
 ###############################################################################
 
 __BLAST_OUTDIR__ = "%s/blast" % __RUN_DIR__
+__ANALYSIS_OUTDIR__ = "%s/analysis" % __RUN_DIR__
+__BUSCO_OUTDIR__ = "%s/busco" % __RUN_DIR__
+
+
 __BLASTFIELDS__  = "qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore slen qlen"
+
+###############################################################################
+# BLAST                                                                       #
+###############################################################################
+
 
 rule make_blastdb:
   input:
     prots = lambda wildcards: "%s/%s" % (dconfig["dataprefix"], dconfig["data"][wildcards.genome]["aa"])
   output:
     db = "%s/blastdb.{genome}.db" % __BLAST_OUTDIR__
-  conda: "conda_env.yaml"
   params:
     blastfields = __BLASTFIELDS__
   shell: """
@@ -39,7 +47,6 @@ rule run_query_blast:
     db    = lambda wildcards: "%s/blastdb.%s.db" % (__BLAST_OUTDIR__, wildcards.genome)
   output:
     hits = "%s/blastoutput.{genome}.tsv" % __BLAST_OUTDIR__
-  conda: "conda_env.yaml"
   threads: 1
   params:
     blastfields = __BLASTFIELDS__
@@ -68,10 +75,9 @@ rule all_blasts:
 # 14.    qlen
 
 ###############################################################################
-# Do the analysis per genome                                                  #
+# Reconstruct the fragments                                                   #
 ###############################################################################
 
-__ANALYSIS_OUTDIR__ = "%s/analysis" % __RUN_DIR__
 rule filter_hits:
   input:
     hits    = lambda wildcards: "%s/blastoutput.%s.tsv" % (__BLAST_OUTDIR__, wildcards.genome),
@@ -207,10 +213,10 @@ rule all_reconstruct_queries:
 
 rule reconstructed_masked:
   input:
-    reconstructed = lambda wildcards: "%s/analysis/%s/reconstructed_list.tsv" % (__RUN_DIR__, wildcards.genome),
+    reconstructed = lambda wildcards: "%s/%s/reconstructed_list.tsv" % (__ANALYSIS_OUTDIR__, wildcards.genome),
     queries       = config["prot_query"]
   output:
-    masked = "%s/analysis/{genome}/masked_reconstructions.fa" % __RUN_DIR__
+    masked = "%s/{genome}/masked_reconstructions.fa" % __ANALYSIS_OUTDIR__
   params:
     blastfields = __BLASTFIELDS__
   run:
@@ -230,9 +236,9 @@ rule reconstructed_masked:
     
 rule reconstructed_masked_combined:
   input:
-    masked = expand("%s/analysis/{genome}/masked_reconstructions.fa" % __RUN_DIR__, genome=GENOMES)
+    masked = expand("%s/{genome}/masked_reconstructions.fa" % __ANALYSIS_OUTDIR__, genome=GENOMES)
   output:
-    masked = "%s/analysis/masked_reconstructions.fa" % __RUN_DIR__
+    masked = "%s/masked_reconstructions.fa" % __ANALYSIS_OUTDIR__
   shell:"""
     cat {input.masked} > {output.masked}
   """
@@ -242,8 +248,7 @@ rule reconstructions_types_blast:
     masked_seqs = rules.reconstructed_masked_combined.output.masked,
     fas12       = config["fas12"]
   output:
-    hits = "%s/analysis/types/hits.tsv" % __RUN_DIR__
-  conda: "conda_env.yaml"
+    hits = "%s/types/hits.tsv" % __ANALYSIS_OUTDIR__
   threads: 20
   params:
     blastfields = __BLASTFIELDS__
@@ -254,11 +259,11 @@ rule reconstructions_types_blast:
 
 rule reconstructed_summary:
   input:
-    reconstructed = lambda wildcards: "%s/analysis/%s/reconstructed_list.tsv" % (__RUN_DIR__, wildcards.genome),
+    reconstructed = lambda wildcards: "%s/%s/reconstructed_list.tsv" % (__ANALYSIS_OUTDIR__, wildcards.genome),
     recon_types   = rules.reconstructions_types_blast.output.hits,
     queries = config["prot_query"]
   output:
-    summary = "%s/analysis/{genome}/reconstruction_summary" % __RUN_DIR__
+    summary = "%s/{genome}/reconstruction_summary" % __ANALYSIS_OUTDIR__
   params:
     blastfields = __BLASTFIELDS__
   run: 
@@ -293,9 +298,9 @@ rule reconstructed_summary:
 
 rule reconstructed_summaries:
   input:
-    summary = expand("%s/analysis/{genome}/reconstruction_summary" % __RUN_DIR__, genome=GENOMES)
+    summary = expand("%s/{genome}/reconstruction_summary" % __ANALYSIS_OUTDIR__, genome=GENOMES)
   output:
-    summary = "%s/analysis/reconstruction_summary" % __RUN_DIR__
+    summary = "%s/reconstruction_summary" % __ANALYSIS_OUTDIR__
   shell: """
     cat {input.summary} | sort -r | uniq  > {output.summary}
   """
@@ -304,7 +309,7 @@ rule coverage_summary:
   input:
     reconstructed = rules.reconstructed_summaries.output.summary
   output:
-    coverage_summary = "%s/analysis/coverage_summary" % __RUN_DIR__
+    coverage_summary = "%s/coverage_summary" % __ANALYSIS_OUTDIR__
   run:
     R = { genome: { "FAS1": 0, "FAS2": 0, "FAS1,FAS2" : 0 } for genome in GENOMES}
     with open(input.reconstructed, "r") as ifd:
@@ -324,6 +329,86 @@ rule coverage_summary:
         ofd.write("%s\t%d\t%d\t%d\n" % (genome, R[genome]["FAS1"], R[genome]["FAS2"], R[genome]["FAS1,FAS2"]))
       #efor
     #ewith
+
+###############################################################################
+# Busco
+###############################################################################
+
+rule busco_dataset:
+  output:
+    tgz  = "%s/dataset.tar.gz" % __BUSCO_OUTDIR__,
+    db   = "%s/dataset" % __BUSCO_OUTDIR__
+  params:
+    db = config["busco_database"]
+  shell: """
+    wget {params.db} -O {output.tgz}
+    mkdir -p {output.db}
+    tar -xf {output.tgz} --strip-components=1 -C {output.db}
+  """
+
+
+rule single_busco:
+  input:
+    prots = lambda wildcards: "%s/%s" % (dconfig["dataprefix"], dconfig["data"][wildcards.genome]["aa"]),
+    db = rules.busco_dataset.output.db
+  output:
+    busco = "%s/busco.{genome}.tsv" % __BUSCO_OUTDIR__
+  threads: 4
+  params:
+    rule_outdir = __BUSCO_OUTDIR__
+  shell: """
+   zcat {input.prots} > {output.busco}.input.fasta
+   cd {params.rule_outdir} && BUSCO -i {output.busco}.input.fasta -f -m prot -l {input.db} -c {threads} -t busco_tmp.{wildcards.genome}.{wildcards.genome} -o busco.{wildcards.genome}
+   ln -sf {params.rule_outdir}/run_busco.{wildcards.genome}/full_table_busco.{wildcards.genome}.tsv {output.busco}
+  """
+
+rule single_busco_complete:
+  input:
+    busco = lambda wildcards: "%s/busco.%s.tsv" % (__BUSCO_OUTDIR__, wildcards.genome)
+  output:
+    complete = "%s/complete.{genome}.tsv" % __BUSCO_OUTDIR__
+  run:
+    import utils
+
+    B = {}
+
+    D = utils.readColumnFile(input.busco, "buscoid status sequence score length", types="str str str float int")
+
+    for hit in D:
+      if not(hit.status == "Complete" or hit.status == "Duplicated"):
+        continue
+      elif hit.buscoid not in B:
+        B[hit.buscoid] = hit
+      elif hit.score > B[hit.buscoid].score:
+        B[hit.buscoid] = hit
+      #fi
+    #efor
+
+    with open(output.complete, "w") as ofd:
+      for buscoid in B:
+        ofd.write("%s\t%s\n" % (buscoid, B[buscoid].sequence))
+      #efor
+    #ewith
+
+rule common_buscos:
+  input:
+    buscos = expand("%s/complete.{genome}.tsv" % __BUSCO_OUTDIR__, genome=dconfig["data"].keys())
+  output:
+    common = "%s/complete_buscos.txt" % __BUSCO_OUTDIR__
+  params:
+    nspecies = len(dconfig["data"].keys())
+  shell: """
+    cat {input.buscos} \
+     | cut -f1 \
+     | sort \
+     | uniq -c \
+     | sed -e 's/^[ ]\+//' \
+     | grep -e '^{params.nspecies} ' \
+     > {output.common}
+  """
+
+###############################################################################
+
 
 rule all:
   input:

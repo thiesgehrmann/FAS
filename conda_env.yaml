@@ -1,3 +1,11 @@
+name: fas
+channels:
+ - thiesgehrmann
+ - bioconda
 dependencies:
+  - snakemake
   - blast
   - intervaltree
+  - busco
+  - clustalo
+  - fasttree

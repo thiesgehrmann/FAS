@@ -278,4 +278,32 @@ def readGFF3File(filename):
 ###############################################################################
 
 
+def readColumnFile(filename, columnNames, delimiter='\t', types=""):
+  import csv
+  L = []
+  typeFunctions = { "str" : lambda x: str(x),
+                    "int" : lambda x: int(x),
+                    "float" : lambda x: float(x) }
 
+  if types != "":
+    types = [ typeFunctions[c] for c in types.split(" ") ]
+  #fi
+
+  lineType = namedtuple("lineType", columnNames)
+  nFields  = len(columnNames.split(" "))
+  with open(filename, "r") as ifd:
+    reader = csv.reader(ifd, delimiter=delimiter)
+    for row in reader:
+      if row[0][0] == '#' or len(row) != nFields:
+        continue
+      #fi
+      if len(types) == len(row):
+        row = [ tf(v) for (tf, v) in zip(types, row) ]
+      #fi
+      L.append(lineType(*row))
+    #efor
+  #ewith
+  return L
+#edef
+
+###############################################################################

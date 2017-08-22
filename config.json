@@ -3,6 +3,7 @@
   "prot_query" : "/home/thiesgehrmann/projects/FAS/fas_neo.fa",
   "fas12"      : "/home/thiesgehrmann/projects/FAS/fas_yeast.fa",
   "evalue_threshold": 1e-50,
-  "genomes" : "/home/thiesgehrmann/projects/pipeline_tests/pub_jgi/run//extract/config.json"
+  "genomes" : "/home/thiesgehrmann/projects/FAS/pan/config_selected.json",
+  "busco_database": "http://busco.ezlab.org/datasets/fungi_odb9.tar.gz"
 }
 
