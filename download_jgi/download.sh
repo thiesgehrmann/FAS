@@ -13,7 +13,7 @@ function login() {
 ###############################################################################
 
 function get_published_list() {
-  ~/repos/bioscripts/select_published_jgi_genomes.sh
+  ~/select_published_jgi_genomes.sh
 }
 
 ###############################################################################
